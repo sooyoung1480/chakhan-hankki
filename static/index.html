@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>착한한끼 · 서울시 대학생 가성비 요식업 지도</title>
+
+  <!-- Pretendard Webfont -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+  <!-- Leaflet & MarkerCluster (OpenStreetMap) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Top Navigation Header (1.0 홈 / 4.0 즐겨찾기 / 5.0 회원관리) -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="brand" id="brandHomeBtn" type="button" title="서울 전체/초기 화면">
+        <span class="brand-badge">착</span>
+        <div class="brand-text">
+          <strong>착한한끼</strong>
+          <span>서울 대학생 가성비 요식업 지도</span>
+        </div>
+      </button>
+
+      <div class="search-wrap">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="가게명, 메뉴(제육·짜장·돈가스), 동네 검색..."
+          autocomplete="off"
+        />
+        <button type="button" id="clearSearchBtn" class="clear-btn hidden" title="검색어 지우기">✕</button>
+      </div>
+
+      <button type="button" id="gpsBtn" class="btn btn-gps" title="내 현재 위치(GPS) 기준으로 탐색">
+        📍 내 주변 찾기
+      </button>
+    </div>
+
+    <div class="topbar-right">
+      <div class="sync-pill" id="syncStatusPill" title="구글 스프레드시트 실시간 DB 연동">
+        <span class="dot"></span>
+        <span id="syncStatusText">구글시트 연동됨</span>
+        <button type="button" id="syncNowBtn" class="sync-refresh-btn" title="구글 스프레드시트에서 최신 데이터 동기화">↻</button>
+      </div>
+
+      <button type="button" id="favModeBtn" class="btn btn-outline">
+        ♥ 내 즐겨찾기 <span class="badge-count" id="favCountBadge">0</span>
+      </button>
+
+      <button type="button" id="metricsBtn" class="btn btn-ghost" title="서비스 데이터 및 피드백 현황">
+        📊 현황
+      </button>
+
+      <button type="button" id="authBtn" class="btn btn-primary">
+        로그인 / 가입
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace: Sidebar + OpenStreetMap -->
+  <main class="workspace">
+    <!-- Left Sidebar (1.0 위치 선택 + 2.0 다차원 필터 + 결과 목록) -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Intro Banner (1.1 서비스 안내) -->
+      <div class="intro-banner" id="introBanner">
+        <div class="intro-top">
+          <span class="official-tag">행정안전부 착한가격업소 · 요식업 한정</span>
+          <button type="button" id="closeIntroBtn" class="icon-close" aria-label="안내 닫기">✕</button>
+        </div>
+        <p>광고·협찬 없이 <strong>정부가 인증한 서울 가성비 식당</strong>만 모았어요. 대학가와 예산에 맞게 한눈에 찾아보세요.</p>
+      </div>
+
+      <!-- 1.2 탐색 지역(대학가·역세권) 선택 -->
+      <section class="panel-section">
+        <div class="section-head">
+          <h2>🎓 대학가 · 역세권 바로가기</h2>
+          <select id="guSelect" class="gu-select" aria-label="자치구 선택">
+            <option value="전체">서울 전체 (25개 구)</option>
+          </select>
+        </div>
+        <div class="hub-chips" id="hubChips"></div>
+      </section>
+
+      <!-- 2.0 다차원 필터 (업종 / 가격 상한 / 반경) -->
+      <section class="panel-section filters-section">
+        <div class="filter-group">
+          <span class="filter-label">업종</span>
+          <div class="chip-row" id="categoryChips">
+            <button type="button" class="chip active" data-cat="전체">전체</button>
+            <button type="button" class="chip" data-cat="한식">🍚 한식</button>
+            <button type="button" class="chip" data-cat="중식">🥟 중식</button>
+            <button type="button" class="chip" data-cat="일식">🍣 일식</button>
+            <button type="button" class="chip" data-cat="양식">🍝 양식</button>
+            <button type="button" class="chip" data-cat="베이커리">🥐 베이커리</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <span class="filter-label">가격 상한</span>
+          <div class="chip-row" id="priceChips">
+            <button type="button" class="chip active" data-price="">전체</button>
+            <button type="button" class="chip" data-price="5000">5천원 이하</button>
+            <button type="button" class="chip" data-price="8000">8천원 이하</button>
+            <button type="button" class="chip" data-price="10000">1만원 이하</button>
+            <button type="button" class="chip" data-price="15000">1.5만원 이하</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <span class="filter-label">검색 반경</span>
+          <div class="chip-row" id="radiusChips">
+            <button type="button" class="chip" data-radius="500">500m</button>
+            <button type="button" class="chip" data-radius="1000">1km</button>
+            <button type="button" class="chip active" data-radius="2000">2km</button>
+            <button type="button" class="chip" data-radius="5000">5km</button>
+            <button type="button" class="chip" data-radius="0">구/전체</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Result Summary & Sort -->
+      <div class="result-bar">
+        <div class="result-count">
+          <strong id="resultCount">0</strong>개 식당
+          <span id="activeRefLabel" class="ref-label"></span>
+        </div>
+        <div class="result-actions">
+          <label class="fav-toggle-label">
+            <input type="checkbox" id="favOnlyCheck" />
+            <span>찜만 보기</span>
+          </label>
+          <select id="sortSelect" class="sort-select" aria-label="정렬 기준">
+            <option value="distance">가까운 순</option>
+            <option value="price_asc">최저가 순</option>
+            <option value="favorites">찜 많은 순</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Restaurant Cards List -->
+      <div class="restaurant-list" id="restaurantList"></div>
+    </aside>
+
+    <!-- Map Container (OpenStreetMap + Leaflet) -->
+    <section class="map-stage">
+      <div id="map"></div>
+
+      <!-- Mobile view switcher -->
+      <button type="button" id="mobileListToggle" class="mobile-toggle-btn">
+        📋 목록 보기
+      </button>
+
+      <!-- Map Floating Legend -->
+      <div class="map-legend">
+        <span class="legend-item"><i class="lg-dot cat-한식"></i>한식</span>
+        <span class="legend-item"><i class="lg-dot cat-중식"></i>중식</span>
+        <span class="legend-item"><i class="lg-dot cat-일식"></i>일식</span>
+        <span class="legend-item"><i class="lg-dot cat-양식"></i>양식</span>
+        <span class="legend-item"><i class="lg-dot cat-베이커리"></i>베이커리</span>
+      </div>
+
+      <!-- 3.0 Restaurant Detail Drawer -->
+      <aside class="detail-drawer hidden" id="detailDrawer" aria-label="음식점 상세 정보">
+        <div class="drawer-header">
+          <div class="drawer-badges" id="detailBadges"></div>
+          <button type="button" id="closeDetailBtn" class="icon-close" aria-label="상세 닫기">✕</button>
+        </div>
+
+        <h2 id="detailName" class="detail-title">식당 이름</h2>
+        <p id="detailAddress" class="detail-addr"></p>
+        <div class="detail-meta-row">
+          <span id="detailDistance" class="meta-pill"></span>
+          <button type="button" id="copyAddrBtn" class="text-btn">📋 도로명 주소 복사</button>
+        </div>
+
+        <div class="detail-actions">
+          <button type="button" id="detailFavBtn" class="btn btn-fav">♡ 찜하기</button>
+          <button type="button" id="detailShareBtn" class="btn btn-outline">🔗 공유</button>
+        </div>
+
+        <div class="detail-section">
+          <h3>🍽️ 착한가격 대표 메뉴</h3>
+          <ul class="menu-list" id="detailMenuList"></ul>
+        </div>
+
+        <div class="detail-section">
+          <h3>🧭 길찾기 (외부 지도 연동)</h3>
+          <div class="ext-map-btns">
+            <a id="naverMapLink" href="#" target="_blank" rel="noopener" class="ext-btn naver">네이버지도 길찾기</a>
+            <a id="kakaoMapLink" href="#" target="_blank" rel="noopener" class="ext-btn kakao">카카오맵 길찾기</a>
+            <a id="osmMapLink" href="#" target="_blank" rel="noopener" class="ext-btn osm">OSM 지도</a>
+          </div>
+        </div>
+
+        <div class="detail-section report-box">
+          <div class="report-head">
+            <h3>🛠️ 정보 수정 · 가격변동 제보</h3>
+            <span class="report-sub">실제와 다르면 알려주세요</span>
+          </div>
+          <form id="reportForm" class="report-form">
+            <div class="report-row">
+              <select id="reportType">
+                <option value="price_change">가격 변동</option>
+                <option value="menu_error">메뉴 정보 오류</option>
+                <option value="closed">폐업 / 휴업</option>
+                <option value="location_error">위치 핀 오차</option>
+              </select>
+              <input type="number" id="reportPrice" placeholder="변동 가격(원, 선택)" min="0" step="100" />
+            </div>
+            <textarea id="reportDetail" rows="2" placeholder="예: 지난주에 백반이 8,000원에서 9,000원으로 인상되었어요." required></textarea>
+            <button type="submit" class="btn btn-secondary btn-sm">제보 등록하기</button>
+          </form>
+          <ul class="report-history" id="reportHistory"></ul>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <!-- 5.0 회원 관리 Modal (로그인 / 회원가입) -->
+  <div class="modal-backdrop hidden" id="authModal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="authModalTitle">🎓 착한한끼 로그인</h3>
+        <button type="button" class="icon-close" data-close-modal="authModal">✕</button>
+      </div>
+
+      <div id="loggedOutView">
+        <div class="auth-tabs">
+          <button type="button" class="auth-tab active" data-auth-tab="login">로그인</button>
+          <button type="button" class="auth-tab" data-auth-tab="register">회원가입</button>
+        </div>
+
+        <form id="loginForm" class="auth-form">
+          <label>이메일
+            <input type="email" id="loginEmail" placeholder="student@seoul.ac.kr" required />
+          </label>
+          <label>비밀번호
+            <input type="password" id="loginPassword" placeholder="비밀번호 입력" required />
+          </label>
+          <button type="submit" class="btn btn-primary btn-full">로그인</button>
+          <button type="button" id="demoLoginBtn" class="btn btn-outline btn-full">
+            ⚡ 체험용 대학생 계정으로 1초 로그인
+          </button>
+        </form>
+
+        <form id="registerForm" class="auth-form hidden">
+          <label>이메일
+            <input type="email" id="regEmail" placeholder="example@univ.ac.kr" required />
+          </label>
+          <label>비밀번호 (4자 이상)
+            <input type="password" id="regPassword" placeholder="비밀번호" required minlength="4" />
+          </label>
+          <label>닉네임
+            <input type="text" id="regNickname" placeholder="예: 신촌혼밥러" required />
+          </label>
+          <label>소속 대학교 (선택)
+            <input type="text" id="regUniv" placeholder="예: 숭실대학교" />
+          </label>
+          <label class="terms-check">
+            <input type="checkbox" id="regTerms" required />
+            <span>[필수] 서비스 이용약관 및 즐겨찾기 저장을 위한 개인정보 처리에 동의합니다.</span>
+          </label>
+          <button type="submit" class="btn btn-primary btn-full">가입하고 바로 시작하기</button>
+        </form>
+      </div>
+
+      <div id="loggedInView" class="hidden">
+        <div class="profile-box">
+          <p class="profile-name" id="profileNickname"></p>
+          <p class="profile-email" id="profileEmail"></p>
+          <p class="profile-univ" id="profileUniv"></p>
+        </div>
+        <div class="profile-actions">
+          <button type="button" id="viewMyFavMapBtn" class="btn btn-outline btn-full">♥ 내 즐겨찾기 지도 모아보기</button>
+          <button type="button" id="logoutBtn" class="btn btn-ghost btn-full">로그아웃</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics & Data Sync Modal (Lean Canvas 핵심지표 / 백엔드 연동 확인용) -->
+  <div class="modal-backdrop hidden" id="metricsModal">
+    <div class="modal-card modal-wide">
+      <div class="modal-head">
+        <h3>📊 서비스 데이터 · Google Sheets 연동 현황</h3>
+        <button type="button" class="icon-close" data-close-modal="metricsModal">✕</button>
+      </div>
+      <div id="metricsContent" class="metrics-grid"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
